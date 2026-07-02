@@ -563,6 +563,14 @@ function HostLive({ code, game, onStart, onNext, onReveal, onEnd }) {
   const scores      = computeScores(game);
   const ranked      = players.map(([pid,p])=>({ pid, name:p.name, score:scores[pid]||0 })).sort((a,b)=>b.score-a.score);
   const prevCountRef = useRef(0);
+  const [copied, setCopied] = useState(false);
+
+  const joinLink = `${window.location.origin}${window.location.pathname}?join=${code}`;
+  const copyLink = () => {
+    navigator.clipboard.writeText(joinLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // play sound when a new player joins lobby
   useEffect(() => {
@@ -574,13 +582,6 @@ function HostLive({ code, game, onStart, onNext, onReveal, onEnd }) {
 
   // ── LOBBY ──
   if (game.status === "lobby") {
-    const joinLink = `${window.location.origin}${window.location.pathname}?join=${code}`;
-    const [copied, setCopied] = useState(false);
-    const copyLink = () => {
-      navigator.clipboard.writeText(joinLink);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    };
     return (
     <Panel style={{ textAlign:"center" }}>
       <p style={{ color:"var(--muted)", marginBottom:4 }}>Share this code with players</p>
