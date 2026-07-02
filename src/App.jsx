@@ -173,13 +173,14 @@ const genId   = () => Math.random().toString(36).slice(2, 10);
 
 function computeScores(game) {
   const scores = {};
+  const maxPts = game.sessionPts || 1000;
   Object.keys(game.players || {}).forEach(pid => (scores[pid] = 0));
   (game.questions || []).forEach((q, qi) => {
     const answers = (game.answers || {})[qi] || {};
     Object.entries(answers).forEach(([pid, a]) => {
       if (a.choice === q.correct) {
         const ratio = Math.max(0, 1 - a.time / (QUESTION_TIME * 1000));
-        scores[pid] = (scores[pid] || 0) + Math.round(100 + 900 * ratio);
+        scores[pid] = (scores[pid] || 0) + Math.round(maxPts * 0.1 + maxPts * 0.9 * ratio);
       }
     });
   });
@@ -392,8 +393,8 @@ function CSVImport({ onImport }) {
 }
 
 // ─── HOME SCREEN ─────────────────────────────────────────────────────────────
-function Home({ onHost, onJoin }) {
-  const [mode, setMode] = useState(null);
+function Home({ onHost, onJoin, autoJoinCode }) {
+  const [mode, setMode] = useState(autoJoinCode ? "join" : null);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [err,  setErr]  = useState("");
@@ -449,9 +450,10 @@ function Home({ onHost, onJoin }) {
 
 // ─── HOST SETUP ──────────────────────────────────────────────────────────────
 function HostSetup({ onBack, onHost }) {
-  const [title, setTitle]       = useState("");
-  const [questions, setQuestions] = useState([]);
-  const [draft, setDraft]       = useState({ q:"", options:["","","",""], correct:0 });
+  const [title, setTitle]           = useState("");
+  const [questions, setQuestions]   = useState([]);
+  const [sessionPts, setSessionPts] = useState(1000);
+  const [draft, setDraft]           = useState({ q:"", options:["","","",""], correct:0 });
 
   const addQ = () => {
     if (!draft.q.trim() || draft.options.some(o=>!o.trim())) return;
@@ -468,6 +470,25 @@ function HostSetup({ onBack, onHost }) {
 
       <label style={{ fontSize:13, color:"var(--muted)", display:"block", marginTop:16 }}>Quiz title</label>
       <Input value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. Friday Trivia Night" style={{ marginTop:6 }} />
+
+      {/* SESSION POINTS SELECTOR */}
+      <div style={{ marginTop:18, background:"#100E26", borderRadius:12, padding:14 }}>
+        <label style={{ fontSize:13, color:"var(--muted)" }}>⭐ Saare questions ke liye kitne points? (ek baar set karo)</label>
+        <div style={{ display:"flex", gap:8, marginTop:10, flexWrap:"wrap" }}>
+          {[100, 250, 500, 1000, 2000, 5000].map(p => (
+            <button key={p} onClick={() => setSessionPts(p)} style={{
+              background: sessionPts===p ? "var(--yellow)" : "#262252",
+              color: sessionPts===p ? "#14122B" : "var(--ink)",
+              border:"none", borderRadius:8, padding:"10px 18px",
+              fontWeight:800, fontSize:15, cursor:"pointer",
+              boxShadow: sessionPts===p ? "0 3px 0 rgba(0,0,0,.3)" : "none",
+            }}>{p}</button>
+          ))}
+        </div>
+        <p style={{ fontSize:12, color:"var(--muted)", margin:"8px 0 0" }}>
+          Jaldi jawab dene pe zyada milega — max {sessionPts} pts, minimum {Math.round(sessionPts*0.1)} pts
+        </p>
+      </div>
 
       {/* templates */}
       <div style={{ marginTop:16 }}>
@@ -493,10 +514,15 @@ function HostSetup({ onBack, onHost }) {
           <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
             background:"#100E26", borderRadius:10, padding:"10px 12px", marginBottom:8 }}>
             <span style={{ fontSize:14 }}>{i+1}. {q.q}</span>
-            <button onClick={() => setQuestions(questions.filter((_,idx)=>idx!==i))}
-              style={{ background:"none", border:"none", color:"var(--coral)", cursor:"pointer" }}>
-              <Trash2 size={16} />
-            </button>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <span style={{ fontSize:12, color:"var(--yellow)", fontWeight:700, background:"rgba(245,217,10,0.12)", padding:"3px 10px", borderRadius:999 }}>
+                ⭐ {q.points || 1000} pts
+              </span>
+              <button onClick={() => setQuestions(questions.filter((_,idx)=>idx!==i))}
+                style={{ background:"none", border:"none", color:"var(--coral)", cursor:"pointer" }}>
+                <Trash2 size={16} />
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -517,12 +543,12 @@ function HostSetup({ onBack, onHost }) {
             </div>
           ))}
         </div>
-        <Btn onClick={addQ} color="var(--yellow)" style={{ marginTop:12 }}><Plus size={16}/> Add question</Btn>
+        <Btn onClick={addQ} color="var(--yellow)" style={{ marginTop:14 }}><Plus size={16}/> Add question</Btn>
       </div>
 
       <Btn color="var(--coral)" style={{ width:"100%", marginTop:20 }}
         disabled={!title.trim() || questions.length===0}
-        onClick={() => onHost(title.trim(), questions)}>
+        onClick={() => onHost(title.trim(), questions, sessionPts)}>
         Create game & get code <ArrowRight size={16}/>
       </Btn>
     </Panel>
@@ -547,12 +573,35 @@ function HostLive({ code, game, onStart, onNext, onReveal, onEnd }) {
   }, [players.length, game.status]);
 
   // ── LOBBY ──
-  if (game.status === "lobby") return (
+  if (game.status === "lobby") {
+    const joinLink = `${window.location.origin}${window.location.pathname}?join=${code}`;
+    const [copied, setCopied] = useState(false);
+    const copyLink = () => {
+      navigator.clipboard.writeText(joinLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+    return (
     <Panel style={{ textAlign:"center" }}>
       <p style={{ color:"var(--muted)", marginBottom:4 }}>Share this code with players</p>
       <div style={{ fontSize:56, fontWeight:800, letterSpacing:10, color:"var(--yellow)", fontFamily:"Arial Black,Arial,sans-serif" }}>{code}</div>
-      <p style={{ color:"var(--muted)", marginTop:4, fontSize:13 }}>Players open this app → Join → enter code</p>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, margin:"18px 0 10px" }}>
+
+      {/* JOIN LINK */}
+      <div style={{ margin:"14px 0", background:"#100E26", borderRadius:12, padding:12 }}>
+        <p style={{ fontSize:12, color:"var(--muted)", margin:"0 0 8px" }}>Ya seedha ye link bhejo — khulte hi join screen aayegi:</p>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <div style={{ flex:1, fontSize:12, color:"var(--teal)", background:"#0a0920", padding:"8px 12px", borderRadius:8, textAlign:"left", wordBreak:"break-all" }}>
+            {joinLink}
+          </div>
+          <button onClick={copyLink} style={{
+            flexShrink:0, background: copied?"var(--teal)":"var(--violet)",
+            border:"none", borderRadius:8, color:"#fff", padding:"8px 12px",
+            fontWeight:700, fontSize:13, cursor:"pointer",
+          }}>{copied ? "✅ Copied!" : "Copy"}</button>
+        </div>
+      </div>
+
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, margin:"14px 0 10px" }}>
         <Users size={18}/> <span style={{ fontWeight:700 }}>{players.length} joined</span>
       </div>
       <div style={{ display:"flex", flexWrap:"wrap", gap:8, justifyContent:"center", minHeight:36, marginBottom:22 }}>
@@ -562,7 +611,7 @@ function HostLive({ code, game, onStart, onNext, onReveal, onEnd }) {
       </div>
       <Btn color="var(--coral)" disabled={players.length===0} onClick={onStart}><Play size={16}/> Start quiz</Btn>
     </Panel>
-  );
+  );};
 
   // ── ACTIVE ──
   if (game.status === "active") return (
@@ -680,7 +729,12 @@ function PlayerLive({ playerId, game, onAnswer }) {
       <Panel>
         <div style={{ display:"flex", justifyContent:"space-between", color:"var(--muted)", fontSize:13, marginBottom:10 }}>
           <span>Q {idx+1} / {game.questions.length}</span>
-          <span>Score: <strong style={{color:"var(--yellow)"}}>{myScore}</strong></span>
+          <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+            <span style={{ color:"var(--yellow)", fontWeight:700, fontSize:13, background:"rgba(245,217,10,0.12)", padding:"3px 10px", borderRadius:999 }}>
+              ⭐ max {q.points || 1000} pts
+            </span>
+            <span>Score: <strong style={{color:"var(--yellow)"}}>{myScore}</strong></span>
+          </div>
         </div>
         <TimerBar duration={QUESTION_TIME} questionKey={idx} onExpire={() => onAnswer(-1)} />
         <h2 style={{ fontSize:20, marginBottom:18 }}>{q.q}</h2>
@@ -741,6 +795,9 @@ export default function App() {
   const [game,     setGame]     = useState(null);
   const [error,    setError]    = useState("");
 
+  // Auto-open join screen if URL has ?join=XXXXXX
+  const autoJoinCode = new URLSearchParams(window.location.search).get("join");
+
   // real-time listener
   useEffect(() => {
     if (!code) return;
@@ -755,11 +812,11 @@ export default function App() {
     setGame(updated);
   };
 
-  const handleHost = async (title, questions) => {
+  const handleHost = async (title, questions, sessionPts = 1000) => {
     playSound("join");
     playLobbyMusic();
     const c = genCode();
-    const initial = { code:c, title, questions, status:"lobby", currentIndex:-1, players:{}, answers:{}, createdAt:Date.now() };
+    const initial = { code:c, title, questions, sessionPts, status:"lobby", currentIndex:-1, players:{}, answers:{}, createdAt:Date.now() };
     await saveGame(c, initial);
     setGame(initial); setCode(c); setRole("host");
   };
@@ -811,7 +868,7 @@ export default function App() {
 
   return (
     <Shell>
-      {!role && <Home onHost={handleHost} onJoin={handleJoin} />}
+      {!role && <Home onHost={handleHost} onJoin={handleJoin} autoJoinCode={autoJoinCode} />}
       {role && !game && <Panel style={{textAlign:"center"}}>Loading…</Panel>}
       {role==="host" && game && <HostLive code={code} game={game} onStart={handleStart} onReveal={handleReveal} onNext={handleNext} onEnd={handleEnd}/>}
       {role==="player" && game && <PlayerLive playerId={playerId} game={game} onAnswer={handleAnswer}/>}
