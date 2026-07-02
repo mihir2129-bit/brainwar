@@ -138,14 +138,13 @@ const genId   = () => Math.random().toString(36).slice(2,10);
 
 function computeScores(game) {
   const scores = {};
-  const maxPts = game.sessionPts || 1000;
+  const pts = game.sessionPts || 1000;
   Object.keys(game.players||{}).forEach(pid => (scores[pid]=0));
   (game.questions||[]).forEach((q,qi) => {
     const answers = (game.answers||{})[qi] || {};
     Object.entries(answers).forEach(([pid,a]) => {
       if (a.choice === q.correct) {
-        const ratio = Math.max(0, 1 - a.time/(QUESTION_TIME*1000));
-        scores[pid] = (scores[pid]||0) + Math.round(maxPts*0.1 + maxPts*0.9*ratio);
+        scores[pid] = (scores[pid]||0) + pts;
       }
     });
   });
@@ -416,7 +415,7 @@ function HostSetup({ onBack, onHost }) {
           ))}
         </div>
         <p style={{fontSize:12,color:"#A7A2D6",margin:"8px 0 0"}}>
-          Jaldi sahi jawab = max {sessionPts} pts | Dheere = min {Math.round(sessionPts*0.1)} pts
+          Sahi jawab pe exactly {sessionPts} pts milenge — speed se koi fark nahi
         </p>
       </div>
 
@@ -666,7 +665,7 @@ function PlayerLive({ playerId, game, onAnswer }) {
         <div style={{display:"flex",justifyContent:"space-between",color:"#A7A2D6",fontSize:13,marginBottom:10}}>
           <span>Q {idx+1} / {game.questions.length}</span>
           <span style={{color:"#F5D90A",fontWeight:700,background:"rgba(245,217,10,0.12)",padding:"3px 10px",borderRadius:999}}>
-            ⭐ max {game.sessionPts||1000} pts
+            ⭐ {game.sessionPts||1000} pts per question
           </span>
         </div>
         <TimerBar duration={QUESTION_TIME} questionKey={idx} onExpire={()=>onAnswer(-1)}/>
