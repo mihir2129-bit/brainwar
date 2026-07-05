@@ -197,7 +197,10 @@ const css=`
   @keyframes pulseShadow{0%,100%{box-shadow:0 0 0 0 rgba(108,92,231,.4)}50%{box-shadow:0 0 0 14px rgba(108,92,231,0)}}
 
   /* COUNTDOWN ANIMATIONS */
-  @keyframes numPop{0%{transform:scale(0.3);opacity:0}60%{transform:scale(1.25)}100%{transform:scale(1);opacity:1}}
+  @keyframes podiumPop{0%{transform:translateY(60px) scale(0.7);opacity:0}60%{transform:translateY(-10px) scale(1.05)}100%{transform:translateY(0) scale(1);opacity:1}}
+  @keyframes spotlightSearch{0%{transform:rotate(-35deg) translateX(-80px)}50%{transform:rotate(35deg) translateX(80px)}100%{transform:rotate(0deg) translateX(0)}}
+  @keyframes nameGlow{0%,100%{text-shadow:0 0 10px rgba(245,217,10,.4)}50%{text-shadow:0 0 30px rgba(245,217,10,1),0 0 60px rgba(245,217,10,.5)}}
+  @keyframes winnerReveal{0%{transform:scale(0.3) translateY(40px);opacity:0}60%{transform:scale(1.1)}100%{transform:scale(1) translateY(0);opacity:1}}
   @keyframes goPopIn{0%{transform:scale(0.2);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
   @keyframes alarmScale{0%{transform:scaleY(1)}100%{transform:scaleY(1.8)}}
 
@@ -972,37 +975,232 @@ function HostReveal({game,onNext,onEnd}){
   );
 }
 
+// ── PODIUM WINNER SCREEN ──────────────────────────────────────────────────────
+function PodiumScreen({ ranked, myPid }){
+  const [step, setStep] = useState(0);
+  // step 0 = nothing, 1 = 3rd appears, 2 = 2nd appears, 3 = spotlight search, 4 = 1st appears
+
+  useEffect(()=>{
+    const t1 = setTimeout(()=>{ setStep(1); beep(330,.3,.5,"triangle"); }, 600);
+    const t2 = setTimeout(()=>{ setStep(2); beep(440,.3,.5,"triangle"); }, 1800);
+    const t3 = setTimeout(()=>{ setStep(3); }, 3000); // spotlight search
+    const t4 = setTimeout(()=>{
+      setStep(4);
+      // Winner fanfare!
+      [523,659,784,1047,1047].forEach((f,i)=>beep(f,.25,.6,"sine",i*.1));
+      setTimeout(()=>[880,1100].forEach((f,i)=>beep(f,.4,.5,"triangle",i*.15)), 700);
+    }, 5000);
+    return()=>[t1,t2,t3,t4].forEach(clearTimeout);
+  },[]);
+
+  const p1 = ranked[0]; // 1st
+  const p2 = ranked[1]; // 2nd
+  const p3 = ranked[2]; // 3rd
+
+  const podiumColor = { 1:"#F5D90A", 2:"#C0C0C0", 3:"#CD7F32" };
+  const podiumH     = { 1:140, 2:100, 3:70 };
+
+  return(
+    <div style={{
+      minHeight:"100vh",
+      background:"linear-gradient(180deg,#0a0820 0%,#1a1a2e 100%)",
+      display:"flex",flexDirection:"column",
+      alignItems:"center",justifyContent:"center",
+      position:"relative",overflow:"hidden",
+      padding:"20px 16px",
+    }}>
+      <Confetti/>
+
+      {/* TITLE */}
+      <div style={{
+        textAlign:"center",marginBottom:40,
+        animation: step>=1 ? "fadeSlideDown .5s ease" : "none",
+        opacity: step>=1 ? 1 : 0,
+      }}>
+        <div style={{fontSize:44,marginBottom:8}}>🏆</div>
+        <h1 style={{fontSize:26,fontWeight:900,letterSpacing:1}}>Final Results!</h1>
+      </div>
+
+      {/* SPOTLIGHT - only during step 3 */}
+      {step===3&&(
+        <div style={{
+          position:"absolute",top:0,left:"50%",
+          width:200,height:"100%",
+          background:"linear-gradient(180deg,rgba(255,255,255,.18) 0%,transparent 70%)",
+          transformOrigin:"top center",
+          animation:"spotlightSearch 2s ease-in-out",
+          pointerEvents:"none",zIndex:10,
+        }}/>
+      )}
+
+      {/* WINNER SPOTLIGHT - step 4 */}
+      {step===4&&(
+        <div style={{
+          position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",
+          width:280,height:"100%",
+          background:"linear-gradient(180deg,rgba(245,217,10,.22) 0%,transparent 65%)",
+          pointerEvents:"none",zIndex:10,
+        }}/>
+      )}
+
+      {/* PODIUM */}
+      <div style={{
+        display:"flex",alignItems:"flex-end",justifyContent:"center",
+        gap:0,width:"100%",maxWidth:400,position:"relative",zIndex:20,
+      }}>
+
+        {/* 3RD PLACE */}
+        <div style={{
+          display:"flex",flexDirection:"column",alignItems:"center",flex:1,
+          opacity: step>=1 ? 1 : 0,
+          animation: step===1 ? "podiumPop .5s cubic-bezier(.34,1.56,.64,1)" : "none",
+          transition:"opacity .3s",
+        }}>
+          {p3&&(
+            <>
+              <div style={{
+                fontSize:13,fontWeight:800,color:podiumColor[3],
+                marginBottom:6,textAlign:"center",
+                maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+              }}>{p3.name}</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginBottom:8,fontWeight:700}}>
+                {p3.score} pts
+              </div>
+              <div style={{fontSize:32,marginBottom:8}}>🥉</div>
+            </>
+          )}
+          <div style={{
+            width:"100%",height:podiumH[3],
+            background:`linear-gradient(180deg,${podiumColor[3]}cc,${podiumColor[3]}66)`,
+            borderRadius:"10px 10px 0 0",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            boxShadow:`0 0 20px ${podiumColor[3]}44`,
+            border:`2px solid ${podiumColor[3]}88`,
+          }}>
+            <span style={{fontSize:40,fontWeight:900,color:"#fff",
+              textShadow:"0 2px 8px rgba(0,0,0,.5)"}}>3</span>
+          </div>
+        </div>
+
+        {/* 1ST PLACE - center, tallest */}
+        <div style={{
+          display:"flex",flexDirection:"column",alignItems:"center",flex:1,
+          opacity: step>=4 ? 1 : 0,
+          transform: step>=4 ? "translateY(0)" : "translateY(30px)",
+          transition:"opacity .5s ease, transform .5s cubic-bezier(.34,1.56,.64,1)",
+          position:"relative",zIndex:30,
+        }}>
+          {p1&&(
+            <>
+              {step>=4&&(
+                <div style={{
+                  fontSize:11,fontWeight:700,color:"rgba(255,255,255,.6)",
+                  marginBottom:4,letterSpacing:2,textTransform:"uppercase",
+                  animation:"fadeSlideDown .4s ease .3s both",
+                }}>🌟 Winner 🌟</div>
+              )}
+              <div style={{
+                fontSize:14,fontWeight:900,color:podiumColor[1],
+                marginBottom:5,textAlign:"center",
+                maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                animation: step>=4 ? "nameGlow 1.5s ease infinite" : "none",
+              }}>{p1.name}</div>
+              <div style={{fontSize:12,color:"rgba(255,255,255,.6)",marginBottom:8,fontWeight:800}}>
+                {p1?.score} pts
+              </div>
+              <div style={{
+                fontSize:40,marginBottom:8,
+                animation: step>=4 ? "bounceY .6s ease infinite" : "none",
+              }}>🥇</div>
+            </>
+          )}
+          <div style={{
+            width:"100%",height:podiumH[1],
+            background:`linear-gradient(180deg,${podiumColor[1]}cc,${podiumColor[1]}55)`,
+            borderRadius:"10px 10px 0 0",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            boxShadow: step>=4 ? `0 0 40px ${podiumColor[1]}88,0 0 80px ${podiumColor[1]}33` : "none",
+            border:`2px solid ${podiumColor[1]}`,
+            transition:"box-shadow .5s",
+          }}>
+            <span style={{fontSize:50,fontWeight:900,color:"#fff",
+              textShadow:"0 2px 10px rgba(0,0,0,.5)"}}>1</span>
+          </div>
+        </div>
+
+        {/* 2ND PLACE */}
+        <div style={{
+          display:"flex",flexDirection:"column",alignItems:"center",flex:1,
+          opacity: step>=2 ? 1 : 0,
+          animation: step===2 ? "podiumPop .5s cubic-bezier(.34,1.56,.64,1)" : "none",
+          transition:"opacity .3s",
+        }}>
+          {p2&&(
+            <>
+              <div style={{
+                fontSize:13,fontWeight:800,color:podiumColor[2],
+                marginBottom:6,textAlign:"center",
+                maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+              }}>{p2.name}</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginBottom:8,fontWeight:700}}>
+                {p2.score} pts
+              </div>
+              <div style={{fontSize:32,marginBottom:8}}>🥈</div>
+            </>
+          )}
+          <div style={{
+            width:"100%",height:podiumH[2],
+            background:`linear-gradient(180deg,${podiumColor[2]}cc,${podiumColor[2]}55)`,
+            borderRadius:"10px 10px 0 0",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            boxShadow:`0 0 20px ${podiumColor[2]}44`,
+            border:`2px solid ${podiumColor[2]}88`,
+          }}>
+            <span style={{fontSize:44,fontWeight:900,color:"#fff",
+              textShadow:"0 2px 8px rgba(0,0,0,.5)"}}>2</span>
+          </div>
+        </div>
+      </div>
+
+      {/* SEARCHING text during spotlight */}
+      {step===3&&(
+        <div style={{
+          marginTop:30,fontSize:15,color:"rgba(255,255,255,.5)",
+          fontWeight:700,letterSpacing:2,textTransform:"uppercase",
+          animation:"pulse .5s ease infinite",
+        }}>Finding the winner...</div>
+      )}
+
+      {/* Full list below podium */}
+      {step>=4&&ranked.length>3&&(
+        <div style={{width:"100%",maxWidth:400,marginTop:24}}>
+          {ranked.slice(3).map((p,i)=>(
+            <div key={p.pid} style={{
+              display:"flex",justifyContent:"space-between",alignItems:"center",
+              padding:"10px 16px",
+              background: p.pid===myPid?"rgba(108,92,231,.2)":"rgba(255,255,255,.04)",
+              border:`1px solid ${p.pid===myPid?"rgba(108,92,231,.4)":"rgba(255,255,255,.06)"}`,
+              borderRadius:10,marginBottom:6,
+              animation:`rankSlide .4s ease ${i*.08}s both`,
+            }}>
+              <span style={{display:"flex",alignItems:"center",gap:10,fontWeight:600,fontSize:14}}>
+                <span>{i+4}.</span>{p.name}{p.pid===myPid?" (you)":""}
+              </span>
+              <span style={{fontWeight:700,fontSize:15,color:"rgba(255,255,255,.6)"}}>{p.score}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── HOST ENDED ────────────────────────────────────────────────────────────────
 function HostEnded({game}){
   const players=Object.entries(game.players||{});
   const scores=computeScores(game);
   const ranked=players.map(([pid,p])=>({pid,name:p.name,score:scores[pid]||0})).sort((a,b)=>b.score-a.score);
-  return(
-    <div style={{textAlign:"center",animation:"fadeSlideDown .5s ease both"}}>
-      <Confetti/>
-      <div style={{marginBottom:28}}>
-        <div style={{fontSize:62,animation:"bounceY .7s ease infinite"}}>🏆</div>
-        <h1 style={{fontSize:28,fontWeight:900,marginTop:12}}>Quiz Complete!</h1>
-        <p style={{color:"rgba(255,255,255,.35)",fontSize:14,marginTop:6}}>Final Results</p>
-      </div>
-      <div style={{maxWidth:480,margin:"0 auto"}}>
-        {ranked.map((p,i)=>(
-          <div key={p.pid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-            padding:"15px 20px",marginBottom:10,borderRadius:16,
-            background:i===0?"linear-gradient(135deg,rgba(245,217,10,.22),rgba(245,217,10,.07))":"rgba(255,255,255,.04)",
-            border:`2px solid ${i===0?"rgba(245,217,10,.45)":i===1?"rgba(192,192,192,.25)":i===2?"rgba(205,127,50,.25)":"rgba(255,255,255,.07)"}`,
-            transform:i===0?"scale(1.04)":"scale(1)",
-            animation:`rankSlide .5s ease ${i*.1}s both`}}>
-            <span style={{display:"flex",alignItems:"center",gap:12,fontSize:16}}>
-              <span style={{fontSize:26}}>{["🥇","🥈","🥉"][i]||`${i+1}.`}</span>
-              <span style={{fontWeight:700}}>{p.name}</span>
-            </span>
-            <span style={{fontWeight:900,fontSize:20,color:i===0?"#F5D90A":"#fff"}}>{p.score}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  return <PodiumScreen ranked={ranked} myPid={null}/>;
 }
 
 // ── PLAYER LIVE ───────────────────────────────────────────────────────────────
@@ -1197,36 +1395,7 @@ function PlayerLive({playerId,game,onAnswer}){
 
   // ENDED
   if(game.status==="ended"){
-    const isTop3=myRank<=3;
-    return(
-      <div style={{textAlign:"center",animation:"fadeSlideDown .5s ease both"}}>
-        {isTop3&&<Confetti/>}
-        <div style={{fontSize:62,animation:"bounceY .7s ease infinite"}}>{isTop3?["🥇","🥈","🥉"][myRank-1]:"🎮"}</div>
-        <h2 style={{fontSize:25,fontWeight:900,marginTop:14}}>Quiz Over!</h2>
-        <div style={{margin:"20px auto",background:"rgba(255,255,255,.04)",
-          border:"1px solid rgba(255,255,255,.08)",borderRadius:18,
-          padding:"22px 32px",display:"inline-block",minWidth:240}}>
-          <p style={{fontSize:12,color:"rgba(255,255,255,.35)",marginBottom:4,letterSpacing:1,textTransform:"uppercase"}}>Final Score</p>
-          <p style={{fontSize:50,fontWeight:900,color:"#F5D90A",lineHeight:1,animation:"scaleIn .5s ease"}}>{myScore}</p>
-          <p style={{fontSize:16,color:"rgba(255,255,255,.5)",marginTop:8}}>Rank #{myRank}</p>
-        </div>
-        <div style={{marginTop:18,maxWidth:440,margin:"18px auto 0"}}>
-          {ranked.slice(0,5).map((p,i)=>(
-            <div key={p.pid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-              padding:"12px 16px",
-              background:p.pid===playerId?"rgba(108,92,231,.2)":"rgba(255,255,255,.04)",
-              border:`1px solid ${p.pid===playerId?"rgba(108,92,231,.45)":"rgba(255,255,255,.06)"}`,
-              borderRadius:12,marginBottom:8,animation:`rankSlide .4s ease ${i*.08}s both`}}>
-              <span style={{display:"flex",alignItems:"center",gap:10,fontWeight:600}}>
-                <span style={{fontSize:18}}>{["🥇","🥈","🥉"][i]||`${i+1}.`}</span>
-                {p.name}{p.pid===playerId?" (you)":""}
-              </span>
-              <span style={{fontWeight:800,fontSize:17,color:"#F5D90A"}}>{p.score}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <PodiumScreen ranked={ranked} myPid={playerId}/>;
   }
   return null;
 }
