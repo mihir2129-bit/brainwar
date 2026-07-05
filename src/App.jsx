@@ -196,13 +196,10 @@ const css=`
   @keyframes playerPop{from{transform:scale(0) translateY(16px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}
   @keyframes pulseShadow{0%,100%{box-shadow:0 0 0 0 rgba(108,92,231,.4)}50%{box-shadow:0 0 0 14px rgba(108,92,231,0)}}
 
-  /* BUZZER ALARM ANIMATIONS */
-  @keyframes alarmFlash{0%,100%{background:rgba(10,8,30,0.95)}50%{background:rgba(230,57,70,0.35)}}
-  @keyframes alarmScale{0%{transform:scale(1)}25%{transform:scale(1.2)}50%{transform:scale(0.9)}75%{transform:scale(1.15)}100%{transform:scale(1)}}
-  @keyframes alarmRing{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-15deg)}40%{transform:rotate(15deg)}60%{transform:rotate(-10deg)}80%{transform:rotate(10deg)}}
-  @keyframes alarmBorder{0%,100%{border-color:rgba(230,57,70,.3)}50%{border-color:#e63946}}
-  @keyframes alarmText{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.7;transform:scale(0.95)}}
-  @keyframes goFlash{0%{transform:scale(0.3);opacity:0}50%{transform:scale(1.2)}100%{transform:scale(1);opacity:1}}
+  /* COUNTDOWN ANIMATIONS */
+  @keyframes numPop{0%{transform:scale(0.3);opacity:0}60%{transform:scale(1.25)}100%{transform:scale(1);opacity:1}}
+  @keyframes goPopIn{0%{transform:scale(0.2);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+  @keyframes alarmScale{0%{transform:scaleY(1)}100%{transform:scaleY(1.8)}}
 
   .q-enter{animation:fadeSlideDown .45s cubic-bezier(.34,1.56,.64,1) both;}
   .btn-pop-0{animation:fadeSlideUp .4s cubic-bezier(.34,1.56,.64,1) .08s both;}
@@ -223,105 +220,90 @@ const css=`
   .answer-btn.disabled{opacity:.4;pointer-events:none;}
 `;
 
-// ── BUZZER COUNTDOWN ──────────────────────────────────────────────────────────
-function BuzzerCountdown({ onDone, label }){
-  const [phase, setPhase] = useState("alarm"); // alarm → go
-  const [dots, setDots]   = useState(3);
+// ── 3,2,1 GO COUNTDOWN (buzzer sounds) ───────────────────────────────────────
+function CountdownOverlay({ onDone, label }){
+  const [num, setNum]   = useState(3);
+  const [isGo, setIsGo] = useState(false);
+  const colors = {3:"#e63946", 2:"#f4a261", 1:"#F5D90A"};
 
   useEffect(()=>{
-    playBuzzerAlarm();
+    // Buzzer beep for "3"
+    beep(200,.18,.7,"sawtooth"); beep(400,.1,.4,"square",.12);
 
-    // Animate dots: 3 → 2 → 1
-    const t1 = setTimeout(()=>setDots(2), 500);
-    const t2 = setTimeout(()=>setDots(1), 1000);
-
-    // Switch to GO!
-    const t3 = setTimeout(()=>{
-      setPhase("go");
-      playSound("start");
-    }, 1500);
-
-    // Done
-    const t4 = setTimeout(()=> onDone(), 2200);
-
+    const t1=setTimeout(()=>{
+      setNum(2);
+      beep(200,.18,.7,"sawtooth"); beep(400,.1,.4,"square",.12);
+    },1000);
+    const t2=setTimeout(()=>{
+      setNum(1);
+      beep(200,.18,.7,"sawtooth"); beep(400,.1,.4,"square",.12);
+    },2000);
+    const t3=setTimeout(()=>{
+      setIsGo(true);
+      // GO! rising fanfare
+      [523,659,784,1047].forEach((f,i)=>beep(f,.18,.5,"sine",i*.07));
+    },3000);
+    const t4=setTimeout(()=>onDone(), 3800);
     return()=>[t1,t2,t3,t4].forEach(clearTimeout);
   },[]);
 
-  if(phase === "go") return (
+  return(
     <div style={{
       position:"fixed",inset:0,zIndex:9000,
-      display:"flex",alignItems:"center",justifyContent:"center",
-      background:"rgba(10,8,30,0.92)",backdropFilter:"blur(8px)",
-    }}>
-      <div style={{
-        fontSize:110,fontWeight:900,color:"#2ec4b6",
-        fontFamily:"Arial Black,Arial,sans-serif",
-        animation:"goFlash .5s cubic-bezier(.34,1.56,.64,1)",
-        textShadow:"0 0 60px rgba(46,196,182,.7),0 0 120px rgba(46,196,182,.3)",
-        letterSpacing:-4,
-      }}>GO!</div>
-    </div>
-  );
-
-  return (
-    <div style={{
-      position:"fixed",inset:0,zIndex:9000,
+      background:"rgba(10,8,30,0.94)",backdropFilter:"blur(10px)",
       display:"flex",flexDirection:"column",
       alignItems:"center",justifyContent:"center",
-      animation:"alarmFlash .3s ease infinite",
-      backdropFilter:"blur(8px)",
     }}>
-      {/* Alarm icon */}
-      <div style={{
-        fontSize:70,
-        animation:"alarmRing .25s ease infinite",
-        marginBottom:16,
-      }}>🚨</div>
-
       {/* Label */}
-      {label && (
+      {label&&!isGo&&(
         <div style={{
-          fontSize:15,fontWeight:700,color:"rgba(255,255,255,.6)",
-          letterSpacing:2,textTransform:"uppercase",marginBottom:20,
-          animation:"alarmText .3s ease infinite",
+          fontSize:14,fontWeight:700,color:"rgba(255,255,255,.45)",
+          letterSpacing:3,textTransform:"uppercase",marginBottom:32,
         }}>{label}</div>
       )}
 
-      {/* Alarm border box */}
-      <div style={{
-        border:"4px solid rgba(230,57,70,.6)",borderRadius:20,
-        padding:"24px 48px",textAlign:"center",
-        animation:"alarmBorder .3s ease infinite,alarmScale .6s ease infinite",
-        background:"rgba(230,57,70,.08)",
-      }}>
-        <div style={{
-          fontSize:16,fontWeight:700,color:"rgba(255,255,255,.5)",
-          letterSpacing:3,marginBottom:10,textTransform:"uppercase",
-        }}>Get Ready!</div>
-        {/* Dot countdown */}
-        <div style={{display:"flex",gap:14,justifyContent:"center"}}>
+      {/* Big number / GO */}
+      <div key={isGo?"go":num} style={{
+        fontSize: isGo ? 120 : 160,
+        fontWeight:900,
+        color: isGo ? "#2ec4b6" : colors[num],
+        fontFamily:"Arial Black,Arial,sans-serif",
+        lineHeight:1,
+        animation: isGo
+          ? "goPopIn .45s cubic-bezier(.34,1.56,.64,1)"
+          : "numPop .4s cubic-bezier(.34,1.56,.64,1)",
+        textShadow: isGo
+          ? "0 0 60px rgba(46,196,182,.8)"
+          : `0 0 60px ${colors[num]}99`,
+        letterSpacing: isGo ? -4 : 0,
+      }}>{isGo ? "GO!" : num}</div>
+
+      {/* Dot indicators */}
+      {!isGo&&(
+        <div style={{display:"flex",gap:14,marginTop:36}}>
           {[3,2,1].map(n=>(
             <div key={n} style={{
-              width:22,height:22,borderRadius:"50%",
-              background:n<=dots?"#e63946":"rgba(255,255,255,.12)",
-              transition:"background .2s",
-              boxShadow:n<=dots?"0 0 14px #e63946":"none",
-              animation:n===dots?"alarmScale .3s ease infinite":"none",
+              width:18,height:18,borderRadius:"50%",
+              background: n>=num ? colors[num] : "rgba(255,255,255,.12)",
+              boxShadow: n===num ? `0 0 14px ${colors[num]}` : "none",
+              transition:"all .2s",
             }}/>
           ))}
         </div>
-      </div>
+      )}
 
-      {/* Horizontal alarm bars */}
-      <div style={{marginTop:28,display:"flex",gap:6}}>
-        {Array.from({length:8},(_,i)=>(
-          <div key={i} style={{
-            width:6,height:24+Math.abs(i-3.5)*10,borderRadius:3,
-            background:"#e63946",opacity:.3+Math.abs(i-3.5)*.1,
-            animation:`alarmScale .3s ease ${i*.04}s infinite`,
-          }}/>
-        ))}
-      </div>
+      {/* Sound bars */}
+      {!isGo&&(
+        <div style={{position:"absolute",bottom:55,display:"flex",gap:5,alignItems:"flex-end"}}>
+          {Array.from({length:9},(_,i)=>(
+            <div key={i} style={{
+              width:6,height:10+Math.abs(i-4)*8,borderRadius:3,
+              background:colors[num],opacity:.35+Math.abs(i-4)*.07,
+              animation:`alarmScale .3s ease ${i*.035}s infinite alternate`,
+            }}/>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -856,7 +838,7 @@ function HostActive({game,onReveal}){
   return(
     <div>
       {showBuzzer&&(
-        <BuzzerCountdown
+        <CountdownOverlay
           label={game.currentIndex===0?"Quiz is Starting!":"Next Question"}
           onDone={()=>{setShowBuzzer(false);playGameMusic();}}
         />
@@ -1100,15 +1082,13 @@ function PlayerLive({playerId,game,onAnswer}){
           <h3 style={{fontSize:21,marginTop:16,color:"#F5D90A",fontWeight:800}}>Answer Locked In!</h3>
           <p style={{color:"rgba(255,255,255,.4)",marginTop:8}}>Waiting for others...</p>
         </div>
-        {/* Live score table while waiting */}
-        <LiveScoreboard game={game} highlightPid={playerId}/>
       </div>
     );
 
     return(
       <div style={{animation:"fadeSlideDown .4s ease both"}}>
         {showBuzzer&&(
-          <BuzzerCountdown
+          <CountdownOverlay
             label={idx===0?"Quiz is Starting!":"Next Question"}
             onDone={()=>setShowBuzzer(false)}
           />
@@ -1211,9 +1191,6 @@ function PlayerLive({playerId,game,onAnswer}){
               textShadow:"0 0 18px rgba(46,196,182,.4)"}}>#{myRank}</p>
           </div>
         </div>
-
-        {/* LIVE SCOREBOARD */}
-        <LiveScoreboard game={game} highlightPid={playerId}/>
       </div>
     );
   }
