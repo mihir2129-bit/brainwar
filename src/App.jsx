@@ -45,6 +45,10 @@ const SFX={
   urgentTick(){beep(1100,.05,.25,"square");},
   victory()   {[523,523,784,659,880].forEach((f,i)=>beep(f,.22,.25,"triangle",i*.13));beep(1047,.5,.3,"triangle",.7);},
   playerJoin(){beep(440,.06,.2,"sine");beep(660,.1,.25,"sine",.08);beep(880,.12,.2,"sine",.18);},
+  count3()    {beep(330,.25,.4,"triangle");},
+  count2()    {beep(440,.25,.4,"triangle");},
+  count1()    {beep(550,.25,.4,"triangle");},
+  countGo()   {[660,880,1100].forEach((f,i)=>beep(f,.2,.4,"sine",i*.08));},
 };
 function playSound(n){if(!_muted)try{SFX[n]?.();}catch{}}
 function stopBgMusic(){clearTimeout(_loopTimer);_musicNodes.forEach(n=>{try{n.stop?n.stop():n.disconnect();}catch{}});_musicNodes=[];}
@@ -171,7 +175,10 @@ const css=`
   @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-10px)}40%{transform:translateX(10px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}
   @keyframes bounceY{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
   @keyframes glow{0%,100%{text-shadow:0 0 20px rgba(245,217,10,.4)}50%{text-shadow:0 0 40px rgba(245,217,10,.9),0 0 60px rgba(245,217,10,.4)}}
-  @keyframes countPulse{0%{transform:scale(1)}50%{transform:scale(1.5)}100%{transform:scale(1)}}
+  @keyframes countPop{0%{transform:scale(0.2);opacity:0}60%{transform:scale(1.3)}100%{transform:scale(1);opacity:1}}
+  @keyframes countFade{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(2)}}
+  @keyframes nextQSlide{0%{transform:translateX(100%);opacity:0}100%{transform:translateX(0);opacity:1}}
+  @keyframes overlayIn{from{opacity:0}to{opacity:1}}
   @keyframes floatScore{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-80px);opacity:0}}
   @keyframes correctFlash{0%,100%{background:rgba(46,196,182,.3)}50%{background:rgba(46,196,182,.7)}}
   @keyframes wrongFlash{0%,100%{background:rgba(230,57,70,.3)}30%{transform:translateX(-8px)}60%{transform:translateX(8px)}}
@@ -215,6 +222,71 @@ function FloatScore({pts,onDone}){
       textShadow:"0 2px 20px rgba(245,217,10,.6)",animation:"floatScore 1.4s ease forwards",
       whiteSpace:"nowrap"}}>
       +{pts} pts! 🎯
+    </div>
+  );
+}
+
+// ── COUNTDOWN OVERLAY ─────────────────────────────────────────────────────────
+const COUNT_COLORS = { 3:"#e63946", 2:"#f4a261", 1:"#F5D90A", "GO!":"#2ec4b6" };
+
+function CountdownOverlay({ onDone, label }) {
+  const [step, setStep] = useState(0);
+  const steps = [3, 2, 1, "GO!"];
+  const current = steps[step];
+
+  useEffect(() => {
+    playSound("count3");
+    const timers = [];
+    timers.push(setTimeout(() => { setStep(1); playSound("count2"); }, 1000));
+    timers.push(setTimeout(() => { setStep(2); playSound("count1"); }, 2000));
+    timers.push(setTimeout(() => { setStep(3); playSound("countGo"); }, 3000));
+    timers.push(setTimeout(() => { onDone(); }, 3700));
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  return (
+    <div style={{
+      position:"fixed", inset:0, zIndex:9000,
+      background:"rgba(10,8,30,0.92)",
+      backdropFilter:"blur(8px)",
+      display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center",
+      animation:"overlayIn .2s ease",
+    }}>
+      {label && (
+        <div style={{
+          fontSize:18, fontWeight:700, color:"rgba(255,255,255,.5)",
+          marginBottom:24, letterSpacing:2, textTransform:"uppercase",
+          animation:"nextQSlide .4s ease",
+        }}>
+          {label}
+        </div>
+      )}
+      <div key={step} style={{
+        fontSize: current==="GO!" ? 90 : 140,
+        fontWeight:900,
+        color: COUNT_COLORS[current],
+        lineHeight:1,
+        animation:"countPop .5s cubic-bezier(.34,1.56,.64,1)",
+        textShadow:`0 0 60px ${COUNT_COLORS[current]}88`,
+        fontFamily:"Arial Black, Arial, sans-serif",
+      }}>
+        {current}
+      </div>
+      {current!=="GO!" && (
+        <div style={{
+          marginTop:32, display:"flex", gap:12,
+        }}>
+          {[3,2,1].map(n => (
+            <div key={n} style={{
+              width:14, height:14, borderRadius:"50%",
+              background: n >= current ? COUNT_COLORS[current] : "rgba(255,255,255,.15)",
+              transition:"background .3s",
+              boxShadow: n === current ? `0 0 12px ${COUNT_COLORS[current]}` : "none",
+            }}/>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -707,11 +779,19 @@ function HostActive({game,onReveal}){
   const answersForQ=(game.answers||{})[game.currentIndex]||{};
   const answered=Object.keys(answersForQ).length;
   const revealedRef=useRef(false);
+  const [countdown, setCountdown] = useState(true);
+  const isFirst = game.currentIndex === 0;
   const doReveal=()=>{if(!revealedRef.current){revealedRef.current=true;onReveal();}};
   if(!q)return null;
 
   return(
     <div>
+      {countdown && (
+        <CountdownOverlay
+          label={isFirst ? "Quiz Starting!" : `Question ${game.currentIndex + 1} of ${game.questions.length}`}
+          onDone={()=>setCountdown(false)}
+        />
+      )}
       {/* TOP BAR */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <div style={{background:"rgba(255,255,255,.08)",borderRadius:999,padding:"8px 16px",fontSize:14,fontWeight:600}}>
@@ -895,7 +975,18 @@ function PlayerLive({playerId,game,onAnswer}){
   const[selectedAnswer,setSelectedAnswer]=useState(null);
   const[showFloat,setShowFloat]=useState(false);
   const[earnedPts,setEarnedPts]=useState(0);
+  const[countdown,setCountdown]=useState(false);
+  const prevIdxRef=useRef(-1);
   const prevScoreRef=useRef(0);
+
+  // Show countdown on each new question
+  useEffect(()=>{
+    if(game.status==="active" && idx !== prevIdxRef.current){
+      prevIdxRef.current = idx;
+      setCountdown(true);
+      setSelectedAnswer(null);
+    }
+  },[game.status, idx]);
 
   useEffect(()=>{
     if(game.status==="reveal"&&!revealedRef.current){
@@ -911,7 +1002,6 @@ function PlayerLive({playerId,game,onAnswer}){
     }
     if(game.status==="active"){
       revealedRef.current=false;
-      setSelectedAnswer(null);
       prevScoreRef.current=myScore;
     }
   },[game.status,idx]);
@@ -942,22 +1032,24 @@ function PlayerLive({playerId,game,onAnswer}){
   if(game.status==="active"){
     const q=game.questions[idx];
     if(!q)return null;
+    const isFirst = idx === 0;
 
     if(myAnswerForQ!==undefined)return(
       <div style={{textAlign:"center",paddingTop:60,animation:"fadeSlideDown .4s ease both"}}>
         <div style={{fontSize:64,animation:"bounceY .6s ease infinite",display:"inline-block"}}>⚡</div>
         <h3 style={{fontSize:22,marginTop:18,color:"#F5D90A",fontWeight:800}}>Answer Locked In!</h3>
         <p style={{color:"rgba(255,255,255,.45)",marginTop:10}}>Waiting for others...</p>
-        <div style={{marginTop:28,background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.08)",
-          borderRadius:16,padding:"18px 28px",display:"inline-block"}}>
-          <p style={{fontSize:14,color:"rgba(255,255,255,.4)"}}>Current Score</p>
-          <p style={{fontSize:36,fontWeight:900,color:"#F5D90A",marginTop:4}}>{myScore}</p>
-        </div>
       </div>
     );
 
     return(
       <div style={{animation:"fadeSlideDown .4s ease both"}}>
+        {countdown && (
+          <CountdownOverlay
+            label={isFirst ? "Quiz Starting!" : `Question ${idx + 1} of ${game.questions.length}`}
+            onDone={()=>setCountdown(false)}
+          />
+        )}
         {/* TOP */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <span style={{background:"rgba(255,255,255,.08)",borderRadius:999,padding:"8px 14px",fontSize:14}}>
@@ -1058,15 +1150,20 @@ function PlayerLive({playerId,game,onAnswer}){
 
         {/* SCORE + RANK */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.08)",
-            borderRadius:14,padding:"18px",textAlign:"center"}}>
-            <p style={{fontSize:12,color:"rgba(255,255,255,.4)",marginBottom:6}}>YOUR SCORE</p>
-            <p style={{fontSize:36,fontWeight:900,color:"#F5D90A",animation:"scaleIn .4s ease"}}>{myScore}</p>
+          <div style={{background:"rgba(245,217,10,.1)",border:"2px solid rgba(245,217,10,.3)",
+            borderRadius:16,padding:"22px",textAlign:"center"}}>
+            <p style={{fontSize:12,color:"rgba(255,255,255,.4)",marginBottom:8,letterSpacing:1}}>YOUR SCORE</p>
+            <p style={{fontSize:44,fontWeight:900,color:"#F5D90A",animation:"scaleIn .5s cubic-bezier(.34,1.56,.64,1)",
+              textShadow:"0 0 20px rgba(245,217,10,.4)"}}>{myScore}</p>
+            {correct && earnedPts>0 && (
+              <p style={{fontSize:14,color:"#2ec4b6",marginTop:6,fontWeight:700}}>+{earnedPts} pts!</p>
+            )}
           </div>
-          <div style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.08)",
-            borderRadius:14,padding:"18px",textAlign:"center"}}>
-            <p style={{fontSize:12,color:"rgba(255,255,255,.4)",marginBottom:6}}>RANK</p>
-            <p style={{fontSize:36,fontWeight:900,color:"#2ec4b6",animation:"scaleIn .4s ease"}}>#{myRank}</p>
+          <div style={{background:"rgba(46,196,182,.1)",border:"2px solid rgba(46,196,182,.3)",
+            borderRadius:16,padding:"22px",textAlign:"center"}}>
+            <p style={{fontSize:12,color:"rgba(255,255,255,.4)",marginBottom:8,letterSpacing:1}}>YOUR RANK</p>
+            <p style={{fontSize:44,fontWeight:900,color:"#2ec4b6",animation:"scaleIn .5s cubic-bezier(.34,1.56,.64,1) .1s both",
+              textShadow:"0 0 20px rgba(46,196,182,.4)"}}>#{myRank}</p>
           </div>
         </div>
       </div>
