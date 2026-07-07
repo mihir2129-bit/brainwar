@@ -197,8 +197,9 @@ const css=`
   @keyframes pulseShadow{0%,100%{box-shadow:0 0 0 0 rgba(108,92,231,.4)}50%{box-shadow:0 0 0 14px rgba(108,92,231,0)}}
 
   /* COUNTDOWN ANIMATIONS */
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
   @keyframes podiumPop{0%{transform:translateY(60px) scale(0.7);opacity:0}60%{transform:translateY(-10px) scale(1.05)}100%{transform:translateY(0) scale(1);opacity:1}}
-  @keyframes spotlightSearch{0%{transform:rotate(-45deg)}25%{transform:rotate(45deg)}50%{transform:rotate(-30deg)}75%{transform:rotate(50deg)}100%{transform:rotate(0deg)}}
+  @keyframes spotlightSearch{0%{transform:rotate(-50deg)}20%{transform:rotate(40deg)}45%{transform:rotate(-35deg)}70%{transform:rotate(45deg)}100%{transform:rotate(0deg)}}
   @keyframes nameGlow{0%,100%{text-shadow:0 0 10px rgba(245,217,10,.4)}50%{text-shadow:0 0 30px rgba(245,217,10,1),0 0 60px rgba(245,217,10,.5)}}
   @keyframes winnerReveal{0%{transform:scale(0.3) translateY(40px);opacity:0}60%{transform:scale(1.1)}100%{transform:scale(1) translateY(0);opacity:1}}
   @keyframes goPopIn{0%{transform:scale(0.2);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
@@ -982,14 +983,14 @@ function PodiumScreen({ ranked, myPid }){
 
   useEffect(()=>{
     const t1 = setTimeout(()=>{ setStep(1); beep(330,.3,.5,"triangle"); }, 600);
-    const t2 = setTimeout(()=>{ setStep(2); beep(440,.3,.5,"triangle"); }, 1800);
-    const t3 = setTimeout(()=>{ setStep(3); }, 3000); // spotlight search
+    const t2 = setTimeout(()=>{ setStep(2); beep(440,.3,.5,"triangle"); }, 2000);
+    const t3 = setTimeout(()=>{ setStep(3); }, 3400); // spotlight search starts
     const t4 = setTimeout(()=>{
       setStep(4);
       // Winner fanfare!
       [523,659,784,1047,1047].forEach((f,i)=>beep(f,.25,.6,"sine",i*.1));
       setTimeout(()=>[880,1100].forEach((f,i)=>beep(f,.4,.5,"triangle",i*.15)), 700);
-    }, 5000);
+    }, 7200); // spotlight searches for 3.8s then stops
     return()=>[t1,t2,t3,t4].forEach(clearTimeout);
   },[]);
 
@@ -1021,28 +1022,29 @@ function PodiumScreen({ ranked, myPid }){
         <h1 style={{fontSize:26,fontWeight:900,letterSpacing:1}}>Final Results!</h1>
       </div>
 
-      {/* SPOTLIGHT SEARCH - circular rotating beam */}
+      {/* SPOTLIGHT SEARCH - slow circular rotating beam */}
       {step===3&&(
         <div style={{
           position:"fixed",top:0,left:"50%",
           width:0,height:0,
-          borderLeft:"140px solid transparent",
-          borderRight:"140px solid transparent",
-          borderTop:"100vh solid rgba(255,255,200,0.12)",
+          borderLeft:"160px solid transparent",
+          borderRight:"160px solid transparent",
+          borderTop:"100vh solid rgba(255,255,220,0.14)",
           transformOrigin:"top center",
-          animation:"spotlightSearch 2s ease-in-out",
+          animation:"spotlightSearch 3.8s ease-in-out",
           pointerEvents:"none",zIndex:10,
-          filter:"blur(18px)",
+          filter:"blur(22px)",
         }}/>
       )}
 
-      {/* WINNER SPOTLIGHT - step 4 */}
-      {step===4&&(
+      {/* WINNER SPOTLIGHT - locked on center */}
+      {step>=4&&(
         <div style={{
-          position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",
-          width:280,height:"100%",
-          background:"linear-gradient(180deg,rgba(245,217,10,.22) 0%,transparent 65%)",
+          position:"fixed",top:0,left:"50%",transform:"translateX(-50%)",
+          width:300,height:"100%",
+          background:"linear-gradient(180deg,rgba(245,217,10,.28) 0%,rgba(245,217,10,.05) 55%,transparent 75%)",
           pointerEvents:"none",zIndex:10,
+          animation:"fadeIn .6s ease",
         }}/>
       )}
 
@@ -1085,12 +1087,12 @@ function PodiumScreen({ ranked, myPid }){
           </div>
         </div>
 
-        {/* 1ST PLACE - center, tallest */}
+        {/* 1ST PLACE - center, tallest, rises from bottom */}
         <div style={{
           display:"flex",flexDirection:"column",alignItems:"center",flex:1,
           opacity: step>=4 ? 1 : 0,
-          transform: step>=4 ? "translateY(0)" : "translateY(30px)",
-          transition:"opacity .5s ease, transform .5s cubic-bezier(.34,1.56,.64,1)",
+          transform: step>=4 ? "translateY(0)" : "translateY(80px)",
+          transition:"opacity 1s ease, transform 1.2s cubic-bezier(.34,1.2,.64,1)",
           position:"relative",zIndex:30,
         }}>
           {p1&&(
@@ -1269,6 +1271,7 @@ function PlayerLive({playerId,game,onAnswer}){
   const[showFloat,setShowFloat]=useState(false);
   const[earnedPts,setEarnedPts]=useState(0);
   const[showBuzzer,setShowBuzzer]=useState(false);
+  const[timerExpired,setTimerExpired]=useState(false);
   const prevIdxRef=useRef(-1);
   const prevScoreRef=useRef(0);
 
@@ -1277,6 +1280,7 @@ function PlayerLive({playerId,game,onAnswer}){
       prevIdxRef.current=idx;
       setShowBuzzer(true);
       setSelectedAnswer(null);
+      setTimerExpired(false);
     }
   },[game.status,idx]);
 
@@ -1323,7 +1327,7 @@ function PlayerLive({playerId,game,onAnswer}){
     const q=game.questions[idx];
     if(!q)return null;
 
-    if(myAnswerForQ!==undefined)return(
+    if(myAnswerForQ!==undefined || timerExpired)return(
       <div style={{animation:"fadeSlideDown .4s ease both"}}>
         <div style={{textAlign:"center",paddingTop:40,marginBottom:20}}>
           <div style={{fontSize:62,animation:"bounceY .6s ease infinite",display:"inline-block"}}>⚡</div>
@@ -1355,7 +1359,7 @@ function PlayerLive({playerId,game,onAnswer}){
 
         {/* TIMER + QUESTION */}
         <div style={{display:"flex",gap:14,alignItems:"flex-start",marginBottom:18}}>
-          <CircularTimer duration={Q_TIME} questionKey={idx} onExpire={()=>onAnswer(-1)}/>
+          <CircularTimer duration={Q_TIME} questionKey={idx} onExpire={()=>{setTimerExpired(true);onAnswer(-1);}}/>
           <div className="q-enter" style={{flex:1,background:"rgba(255,255,255,.04)",
             border:"1px solid rgba(255,255,255,.07)",borderRadius:18,
             padding:"20px 22px",display:"flex",alignItems:"center",minHeight:96}}>
