@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, Trash2, Users, Play, ArrowRight, Trophy, Check, X, Zap, Upload } from "lucide-react";
+import { Plus, Trash2, Users, Play, ArrowRight, Trophy, Check, X, Zap, Upload, Maximize } from "lucide-react";
+import * as XLSX from "xlsx";
+import * as XLSX from "xlsx";
 
 const COLORS = ["#e63946","#2ec4b6","#f4a261","#6c5ce7"];
 const SHAPES = ["▲","◆","●","■"];
@@ -147,6 +149,230 @@ function parseCSV(text){
     results.push({q,options:[a,b,c,d],correct});
   }
   return results;
+}
+
+// ── DOWNLOAD RESULTS (Excel .xlsx — multi-sheet like photo) ───────────────────
+function downloadResults(game){
+  const players   = Object.entries(game.players||{});
+  const questions = game.questions||[];
+  const answers   = game.answers||{};
+  const maxPts    = game.sessionPts||1000;
+
+  // ── Compute per-player detailed stats ──────────────────────────────────────
+  const stats = {};
+  players.forEach(([pid,p])=>{
+    stats[pid]={ name:p.name, score:0, correct:0, wrong:0, unattempted:0 };
+  });
+  questions.forEach((q,qi)=>{
+    const qA = answers[qi]||{};
+    const correctPids = Object.entries(qA)
+      .filter(([,a])=>a.choice===q.correct)
+      .sort((a,b)=>a[1].time-b[1].time);
+    players.forEach(([pid])=>{
+      const ans = qA[pid];
+      if(!ans||ans.choice===-1){ stats[pid].unattempted++; }
+      else if(ans.choice===q.correct){
+        stats[pid].correct++;
+        const rank = correctPids.findIndex(([p])=>p===pid);
+        if(rank===0) stats[pid].score+=maxPts;
+        else{ const r=Math.max(.1,1-ans.time/(Q_TIME*1000)); stats[pid].score+=Math.round(maxPts*r); }
+      } else { stats[pid].wrong++; }
+    });
+  });
+  const ranked = players.map(([pid])=>({pid,...stats[pid]})).sort((a,b)=>b.score-a.score);
+  const total = questions.length;
+
+  const wb = XLSX.utils.book_new();
+
+  // ── SHEET 1: Overview (like photo — questions x players) ───────────────────
+  const playerNames = ranked.map(p=>p.name);
+
+  // Build header row
+  const overviewHeader = [
+    "#","Question","Question Type","Question Accuracy","Average Time (s)",
+    "Correct","Incorrect","Unattempted",
+    ...playerNames
+  ];
+
+  const overviewRows = [overviewHeader];
+
+  questions.forEach((q,qi)=>{
+    const qA = answers[qi]||{};
+    const totalPlayers = players.length;
+    const correctCount = Object.values(qA).filter(a=>a.choice===q.correct).length;
+    const wrongCount   = Object.values(qA).filter(a=>a.choice>=0&&a.choice!==q.correct).length;
+    const unattempted  = totalPlayers - Object.keys(qA).length;
+    const accuracy     = totalPlayers>0 ? Math.round((correctCount/totalPlayers)*100)+"%" : "0%";
+    const times        = Object.values(qA).map(a=>a.time/1000).filter(t=>t>0);
+    const avgTime      = times.length>0 ? (times.reduce((s,t)=>s+t,0)/times.length).toFixed(1) : "-";
+
+    const row = [
+      qi+1, q.q, "Multiple Choice",
+      accuracy, avgTime,
+      correctCount, wrongCount, unattempted,
+    ];
+
+    // Each player's answer (sorted by rank)
+    ranked.forEach(({pid})=>{
+      const ans = qA[pid];
+      if(!ans||ans.choice===-1) row.push("—");
+      else row.push(q.options[ans.choice]||"");
+    });
+
+    overviewRows.push(row);
+  });
+
+  // Summary row at bottom
+  overviewRows.push([]);
+  const summaryHeader = ["","","","Overall","","","","", ...ranked.map(p=>{
+    return total>0 ? Math.round((p.correct/total)*100)+"%" : "0%";
+  })];
+  overviewRows.push(summaryHeader);
+
+  const ws1 = XLSX.utils.aoa_to_sheet(overviewRows);
+
+  // Column widths
+  const colW = [4,40,16,14,14,8,8,10,...playerNames.map(n=>Math.max(12,n.length+2))];
+  ws1["!cols"] = colW.map(w=>({wch:w}));
+
+  // Style: header row green, correct cells green, wrong cells red
+  const range = XLSX.utils.decode_range(ws1["!ref"]);
+  for(let R=0; R<=range.e.r; R++){
+    for(let C=0; C<=range.e.c; C++){
+      const cellRef = XLSX.utils.encode_cell({r:R,c:C});
+      if(!ws1[cellRef]) continue;
+      if(!ws1[cellRef].s) ws1[cellRef].s={};
+
+      if(R===0){
+        // Header — dark green bg white text
+        ws1[cellRef].s = {
+          fill:{patternType:"solid",fgColor:{rgb:"1a1a2e"}},
+          font:{bold:true,color:{rgb:"FFFFFF"},sz:10},
+          alignment:{wrapText:true,horizontal:"center",vertical:"center"},
+          border:{bottom:{style:"medium",color:{rgb:"6C5CE7"}}},
+        };
+      } else if(R>0 && C>=8){
+        // Player answer cells — green if correct, red if wrong
+        const qIdx = R-1;
+        const playerRankIdx = C-8;
+        if(qIdx<questions.length && playerRankIdx<ranked.length){
+          const q = questions[qIdx];
+          const pid = ranked[playerRankIdx].pid;
+          const ans = (answers[qIdx]||{})[pid];
+          const cellVal = ws1[cellRef].v;
+          if(cellVal==="—"||!ans||ans.choice===-1){
+            ws1[cellRef].s = {fill:{patternType:"solid",fgColor:{rgb:"F0F0F0"}},font:{color:{rgb:"999999"},sz:9},alignment:{horizontal:"center"}};
+          } else if(ans.choice===q.correct){
+            ws1[cellRef].s = {fill:{patternType:"solid",fgColor:{rgb:"C8F7C5"}},font:{color:{rgb:"1B6B1B"},bold:true,sz:9},alignment:{horizontal:"center"}};
+          } else {
+            ws1[cellRef].s = {fill:{patternType:"solid",fgColor:{rgb:"FFCCCC"}},font:{color:{rgb:"8B0000"},sz:9},alignment:{horizontal:"center"}};
+          }
+        }
+      } else {
+        ws1[cellRef].s = {
+          font:{sz:10},
+          alignment:{wrapText:true,vertical:"center"},
+        };
+      }
+    }
+  }
+
+  // Freeze top row + left 2 cols
+  ws1["!freeze"] = {xSplit:2, ySplit:1};
+
+  XLSX.utils.book_append_sheet(wb, ws1, "Overview");
+
+  // ── SHEET 2: Participant Data (like photo) ────────────────────────────────
+  const partHeader = ["Rank","Player Name","Score","Correct","Wrong","Unattempted","Accuracy (%)","Total Questions","Points Per Question"];
+  const partRows   = [partHeader];
+
+  ranked.forEach((p,i)=>{
+    partRows.push([
+      i+1, p.name, p.score,
+      p.correct, p.wrong, p.unattempted,
+      total>0 ? Math.round((p.correct/total)*100)+"%" : "0%",
+      total, maxPts,
+    ]);
+  });
+
+  partRows.push([]);
+  partRows.push(["Quiz Title", game.title||"BrainWar Quiz"]);
+  partRows.push(["Total Questions", total]);
+  partRows.push(["Points Per Question", maxPts]);
+  partRows.push(["Total Players", players.length]);
+  partRows.push(["Downloaded At", new Date().toLocaleString()]);
+
+  const ws2 = XLSX.utils.aoa_to_sheet(partRows);
+  ws2["!cols"] = [6,28,10,8,8,10,12,14,14].map(w=>({wch:w}));
+
+  // Header style for ws2
+  for(let C=0;C<=partHeader.length-1;C++){
+    const ref = XLSX.utils.encode_cell({r:0,c:C});
+    if(ws2[ref]) ws2[ref].s={fill:{patternType:"solid",fgColor:{rgb:"6C5CE7"}},font:{bold:true,color:{rgb:"FFFFFF"},sz:10}};
+  }
+  // Gold for rank 1, Silver for rank 2, Bronze for rank 3
+  const medalColors = ["FFF9C4","F5F5F5","FFE0B2"];
+  for(let i=0;i<Math.min(3,ranked.length);i++){
+    for(let C=0;C<=partHeader.length-1;C++){
+      const ref=XLSX.utils.encode_cell({r:i+1,c:C});
+      if(ws2[ref]) ws2[ref].s={fill:{patternType:"solid",fgColor:{rgb:medalColors[i]}},font:{bold:true,sz:10}};
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws2, "Participant Data");
+
+  // ── Write & Download ──────────────────────────────────────────────────────
+  const date = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `BrainWar_Results_${date}.xlsx`);
+}
+
+// ── SCREEN ROTATION ───────────────────────────────────────────────────────────
+function requestLandscape(){
+  try{
+    if(document.documentElement.requestFullscreen){
+      document.documentElement.requestFullscreen().catch(()=>{});
+    } else if(document.documentElement.webkitRequestFullscreen){
+      document.documentElement.webkitRequestFullscreen();
+    }
+    if(screen.orientation&&screen.orientation.lock){
+      screen.orientation.lock("landscape").catch(()=>{});
+    }
+  }catch(e){}
+}
+function exitLandscape(){
+  try{
+    if(document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+    if(screen.orientation&&screen.orientation.unlock) screen.orientation.unlock();
+  }catch(e){}
+}
+
+function RotatePrompt({ onDismiss }){
+  return(
+    <div style={{
+      position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",
+      zIndex:8888,background:"rgba(26,26,46,0.96)",backdropFilter:"blur(12px)",
+      border:"1px solid rgba(108,92,231,.5)",borderRadius:16,
+      padding:"14px 20px",display:"flex",alignItems:"center",gap:14,
+      boxShadow:"0 8px 32px rgba(0,0,0,.5)",maxWidth:380,width:"calc(100% - 32px)",
+      animation:"fadeSlideUp .4s ease both",
+    }}>
+      <span style={{fontSize:28,flexShrink:0}}>🔄</span>
+      <div style={{flex:1}}>
+        <p style={{fontSize:13,fontWeight:700,margin:0,color:"#F4F2FF"}}>Landscape mode available</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,.45)",margin:"3px 0 0"}}>Rotate for a wider quiz view</p>
+      </div>
+      <div style={{display:"flex",gap:8,flexShrink:0}}>
+        <button onClick={()=>{requestLandscape();onDismiss();}} style={{
+          background:"#6C5CE7",border:"none",borderRadius:10,
+          color:"#fff",padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer",
+        }}>Rotate</button>
+        <button onClick={onDismiss} style={{
+          background:"rgba(255,255,255,.08)",border:"none",borderRadius:10,
+          color:"rgba(255,255,255,.5)",padding:"8px 10px",fontSize:12,cursor:"pointer",
+        }}>✕</button>
+      </div>
+    </div>
+  );
 }
 
 // ── CONFETTI ──────────────────────────────────────────────────────────────────
@@ -977,7 +1203,7 @@ function HostReveal({game,onNext,onEnd}){
 }
 
 // ── PODIUM WINNER SCREEN ──────────────────────────────────────────────────────
-function PodiumScreen({ ranked, myPid }){
+function PodiumScreen({ ranked, myPid, game }){
   const [step, setStep] = useState(0);
   // step 0 = nothing, 1 = 3rd appears, 2 = 2nd appears, 3 = spotlight search, 4 = 1st appears
 
@@ -1241,6 +1467,24 @@ function PodiumScreen({ ranked, myPid }){
               }}>{p.score}</span>
             </div>
           ))}
+
+          {/* DOWNLOAD RESULTS BUTTON */}
+          <button
+            onClick={()=>downloadResults(game)}
+            style={{
+              width:"100%",marginTop:20,
+              background:"linear-gradient(135deg,#2ec4b6,#6C5CE7)",
+              border:"none",borderRadius:14,padding:"16px",
+              color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",
+              display:"flex",alignItems:"center",justifyContent:"center",gap:10,
+              boxShadow:"0 4px 20px rgba(46,196,182,.4)",
+              touchAction:"manipulation",
+            }}>
+            📥 Download Results (.csv)
+          </button>
+          <p style={{textAlign:"center",fontSize:11,color:"rgba(255,255,255,.3)",marginTop:6,marginBottom:20}}>
+            Opens in Excel · Rank, Score, Correct, Wrong, Accuracy
+          </p>
         </div>
       )}
     </div>
@@ -1252,7 +1496,7 @@ function HostEnded({game}){
   const players=Object.entries(game.players||{});
   const scores=computeScores(game);
   const ranked=players.map(([pid,p])=>({pid,name:p.name,score:scores[pid]||0})).sort((a,b)=>b.score-a.score);
-  return <PodiumScreen ranked={ranked} myPid={null}/>;
+  return <PodiumScreen ranked={ranked} myPid={null} game={game}/>;
 }
 
 // ── PLAYER LIVE ───────────────────────────────────────────────────────────────
@@ -1449,7 +1693,7 @@ function PlayerLive({playerId,game,onAnswer}){
 
   // ENDED
   if(game.status==="ended"){
-    return <PodiumScreen ranked={ranked} myPid={playerId}/>;
+    return <PodiumScreen ranked={ranked} myPid={playerId} game={game}/>;
   }
   return null;
 }
@@ -1461,6 +1705,8 @@ export default function App(){
   const[playerId,setPlayerId]=useState(null);
   const[game,setGame]=useState(null);
   const[error,setError]=useState("");
+  const[showRotate,setShowRotate]=useState(false);
+  const shownRotateRef=useRef(false);
 
   useEffect(()=>{
     if(!code)return;
@@ -1496,7 +1742,11 @@ export default function App(){
     await saveGame(c,updated);setGame(updated);setPlayerId(pid);setCode(c);setRole("player");
   };
 
-  const handleStart  =()=>{playSound("start");refresh(g=>({...g,status:"active",currentIndex:0,questionStartedAt:Date.now()}));};
+  const handleStart  =()=>{
+    playSound("start");
+    if(!shownRotateRef.current){ shownRotateRef.current=true; setShowRotate(true); setTimeout(()=>setShowRotate(false),8000); }
+    refresh(g=>({...g,status:"active",currentIndex:0,questionStartedAt:Date.now()}));
+  };
   const handleReveal =()=>{stopBgMusic();refresh(g=>({...g,status:"reveal"}));};
   const handleNext   =()=>{stopBgMusic();refresh(g=>({...g,status:"active",currentIndex:g.currentIndex+1,questionStartedAt:Date.now()}));};
   const handleEnd    =()=>{stopBgMusic();setTimeout(()=>playSound("victory"),200);refresh(g=>({...g,status:"ended"}));};
@@ -1526,6 +1776,7 @@ export default function App(){
       {role==="host"&&game&&game.status==="ended"  &&<HostEnded  game={game}/>}
       {role==="player"&&game&&<PlayerLive playerId={playerId} game={game} onAnswer={handleAnswer}/>}
       {error&&<p style={{color:"#e63946",textAlign:"center",marginTop:12}}>{error}</p>}
+      {showRotate&&<RotatePrompt onDismiss={()=>setShowRotate(false)}/>}
     </Shell>
   );
 }
