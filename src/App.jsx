@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Plus, Trash2, Users, Play, ArrowRight, Trophy, Check, X, Zap, Upload, Maximize } from "lucide-react";
 import * as XLSX from "xlsx";
-import * as XLSX from "xlsx";
 
 const COLORS = ["#e63946","#2ec4b6","#f4a261","#6c5ce7"];
 const SHAPES = ["▲","◆","●","■"];
