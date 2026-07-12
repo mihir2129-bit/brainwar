@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { Plus, Trash2, Users, Play, ArrowRight, Trophy, Check, X, Zap, Upload, Maximize } from "lucide-react";
-import * as XLSX from "xlsx";
 
 const COLORS = ["#e63946","#2ec4b6","#f4a261","#6c5ce7"];
 const SHAPES = ["▲","◆","●","■"];
@@ -150,14 +149,14 @@ function parseCSV(text){
   return results;
 }
 
-// ── DOWNLOAD RESULTS (Excel .xlsx — multi-sheet like photo) ───────────────────
+// ── DOWNLOAD RESULTS (Pure JS — no library needed) ────────────────────────────
 function downloadResults(game){
   const players   = Object.entries(game.players||{});
   const questions = game.questions||[];
   const answers   = game.answers||{};
   const maxPts    = game.sessionPts||1000;
 
-  // ── Compute per-player detailed stats ──────────────────────────────────────
+  // Per-player stats
   const stats = {};
   players.forEach(([pid,p])=>{
     stats[pid]={ name:p.name, score:0, correct:0, wrong:0, unattempted:0 };
@@ -172,157 +171,88 @@ function downloadResults(game){
       if(!ans||ans.choice===-1){ stats[pid].unattempted++; }
       else if(ans.choice===q.correct){
         stats[pid].correct++;
-        const rank = correctPids.findIndex(([p])=>p===pid);
+        const rank=correctPids.findIndex(([p])=>p===pid);
         if(rank===0) stats[pid].score+=maxPts;
         else{ const r=Math.max(.1,1-ans.time/(Q_TIME*1000)); stats[pid].score+=Math.round(maxPts*r); }
       } else { stats[pid].wrong++; }
     });
   });
   const ranked = players.map(([pid])=>({pid,...stats[pid]})).sort((a,b)=>b.score-a.score);
-  const total = questions.length;
+  const total  = questions.length;
 
-  const wb = XLSX.utils.book_new();
+  const esc = v => {
+    const s = String(v==null?"":v);
+    return (s.includes(",")||s.includes('"')||s.includes("\n")) ? `"${s.replace(/"/g,'""')}"` : s;
+  };
+  const row = arr => arr.map(esc).join(",");
 
-  // ── SHEET 1: Overview (like photo — questions x players) ───────────────────
+  // ── SHEET 1: Overview (questions × players) ──────────────────────────────
   const playerNames = ranked.map(p=>p.name);
+  const lines1 = [];
 
-  // Build header row
-  const overviewHeader = [
-    "#","Question","Question Type","Question Accuracy","Average Time (s)",
-    "Correct","Incorrect","Unattempted",
-    ...playerNames
-  ];
-
-  const overviewRows = [overviewHeader];
+  lines1.push(row(["#","Question","Question Type","Question Accuracy","Avg Time (s)",
+    "Correct","Incorrect","Unattempted",...playerNames]));
 
   questions.forEach((q,qi)=>{
-    const qA = answers[qi]||{};
-    const totalPlayers = players.length;
-    const correctCount = Object.values(qA).filter(a=>a.choice===q.correct).length;
-    const wrongCount   = Object.values(qA).filter(a=>a.choice>=0&&a.choice!==q.correct).length;
-    const unattempted  = totalPlayers - Object.keys(qA).length;
-    const accuracy     = totalPlayers>0 ? Math.round((correctCount/totalPlayers)*100)+"%" : "0%";
-    const times        = Object.values(qA).map(a=>a.time/1000).filter(t=>t>0);
-    const avgTime      = times.length>0 ? (times.reduce((s,t)=>s+t,0)/times.length).toFixed(1) : "-";
+    const qA          = answers[qi]||{};
+    const tP          = players.length;
+    const correctCnt  = Object.values(qA).filter(a=>a.choice===q.correct).length;
+    const wrongCnt    = Object.values(qA).filter(a=>a.choice>=0&&a.choice!==q.correct).length;
+    const unattempted = tP - Object.keys(qA).filter(pid=>qA[pid]?.choice!==-1).length;
+    const accuracy    = tP>0 ? Math.round((correctCnt/tP)*100)+"%" : "0%";
+    const times       = Object.values(qA).map(a=>a.time/1000).filter(t=>t>0);
+    const avgTime     = times.length ? (times.reduce((s,t)=>s+t,0)/times.length).toFixed(1) : "-";
 
-    const row = [
-      qi+1, q.q, "Multiple Choice",
-      accuracy, avgTime,
-      correctCount, wrongCount, unattempted,
-    ];
-
-    // Each player's answer (sorted by rank)
-    ranked.forEach(({pid})=>{
+    const playerAnswers = ranked.map(({pid})=>{
       const ans = qA[pid];
-      if(!ans||ans.choice===-1) row.push("—");
-      else row.push(q.options[ans.choice]||"");
+      if(!ans||ans.choice===-1) return "—";
+      const txt = q.options[ans.choice]||"";
+      return ans.choice===q.correct ? "✓ "+txt : "✗ "+txt;
     });
 
-    overviewRows.push(row);
+    lines1.push(row([qi+1, q.q, "Multiple Choice", accuracy, avgTime,
+      correctCnt, wrongCnt, unattempted, ...playerAnswers]));
   });
 
-  // Summary row at bottom
-  overviewRows.push([]);
-  const summaryHeader = ["","","","Overall","","","","", ...ranked.map(p=>{
-    return total>0 ? Math.round((p.correct/total)*100)+"%" : "0%";
-  })];
-  overviewRows.push(summaryHeader);
+  // Summary row
+  lines1.push("");
+  lines1.push(row(["","","","Overall Accuracy","","","","",...ranked.map(p=>
+    total>0 ? Math.round((p.correct/total)*100)+"%" : "0%"
+  )]));
+  lines1.push(row(["","","","Total Score","","","","",...ranked.map(p=>p.score+" pts")]));
 
-  const ws1 = XLSX.utils.aoa_to_sheet(overviewRows);
-
-  // Column widths
-  const colW = [4,40,16,14,14,8,8,10,...playerNames.map(n=>Math.max(12,n.length+2))];
-  ws1["!cols"] = colW.map(w=>({wch:w}));
-
-  // Style: header row green, correct cells green, wrong cells red
-  const range = XLSX.utils.decode_range(ws1["!ref"]);
-  for(let R=0; R<=range.e.r; R++){
-    for(let C=0; C<=range.e.c; C++){
-      const cellRef = XLSX.utils.encode_cell({r:R,c:C});
-      if(!ws1[cellRef]) continue;
-      if(!ws1[cellRef].s) ws1[cellRef].s={};
-
-      if(R===0){
-        // Header — dark green bg white text
-        ws1[cellRef].s = {
-          fill:{patternType:"solid",fgColor:{rgb:"1a1a2e"}},
-          font:{bold:true,color:{rgb:"FFFFFF"},sz:10},
-          alignment:{wrapText:true,horizontal:"center",vertical:"center"},
-          border:{bottom:{style:"medium",color:{rgb:"6C5CE7"}}},
-        };
-      } else if(R>0 && C>=8){
-        // Player answer cells — green if correct, red if wrong
-        const qIdx = R-1;
-        const playerRankIdx = C-8;
-        if(qIdx<questions.length && playerRankIdx<ranked.length){
-          const q = questions[qIdx];
-          const pid = ranked[playerRankIdx].pid;
-          const ans = (answers[qIdx]||{})[pid];
-          const cellVal = ws1[cellRef].v;
-          if(cellVal==="—"||!ans||ans.choice===-1){
-            ws1[cellRef].s = {fill:{patternType:"solid",fgColor:{rgb:"F0F0F0"}},font:{color:{rgb:"999999"},sz:9},alignment:{horizontal:"center"}};
-          } else if(ans.choice===q.correct){
-            ws1[cellRef].s = {fill:{patternType:"solid",fgColor:{rgb:"C8F7C5"}},font:{color:{rgb:"1B6B1B"},bold:true,sz:9},alignment:{horizontal:"center"}};
-          } else {
-            ws1[cellRef].s = {fill:{patternType:"solid",fgColor:{rgb:"FFCCCC"}},font:{color:{rgb:"8B0000"},sz:9},alignment:{horizontal:"center"}};
-          }
-        }
-      } else {
-        ws1[cellRef].s = {
-          font:{sz:10},
-          alignment:{wrapText:true,vertical:"center"},
-        };
-      }
-    }
-  }
-
-  // Freeze top row + left 2 cols
-  ws1["!freeze"] = {xSplit:2, ySplit:1};
-
-  XLSX.utils.book_append_sheet(wb, ws1, "Overview");
-
-  // ── SHEET 2: Participant Data (like photo) ────────────────────────────────
-  const partHeader = ["Rank","Player Name","Score","Correct","Wrong","Unattempted","Accuracy (%)","Total Questions","Points Per Question"];
-  const partRows   = [partHeader];
-
+  // ── SHEET 2: Participant Data ────────────────────────────────────────────
+  const lines2 = [];
+  lines2.push(row(["Rank","Player Name","Score","Correct","Wrong","Unattempted","Accuracy","Total Questions"]));
   ranked.forEach((p,i)=>{
-    partRows.push([
-      i+1, p.name, p.score,
-      p.correct, p.wrong, p.unattempted,
-      total>0 ? Math.round((p.correct/total)*100)+"%" : "0%",
-      total, maxPts,
-    ]);
+    lines2.push(row([
+      i+1, p.name, p.score, p.correct, p.wrong, p.unattempted,
+      total>0?Math.round((p.correct/total)*100)+"%":"0%", total
+    ]));
   });
+  lines2.push("");
+  lines2.push(row(["Quiz Title", game.title||"BrainWar Quiz"]));
+  lines2.push(row(["Points Per Question", maxPts]));
+  lines2.push(row(["Total Players", players.length]));
+  lines2.push(row(["Downloaded At", new Date().toLocaleString()]));
 
-  partRows.push([]);
-  partRows.push(["Quiz Title", game.title||"BrainWar Quiz"]);
-  partRows.push(["Total Questions", total]);
-  partRows.push(["Points Per Question", maxPts]);
-  partRows.push(["Total Players", players.length]);
-  partRows.push(["Downloaded At", new Date().toLocaleString()]);
+  // ── Combine both sheets as one CSV with separator ────────────────────────
+  const combined = [
+    "=== OVERVIEW (Questions x Players) ===",
+    ...lines1,
+    "",
+    "",
+    "=== PARTICIPANT DATA ===",
+    ...lines2,
+  ].join("\n");
 
-  const ws2 = XLSX.utils.aoa_to_sheet(partRows);
-  ws2["!cols"] = [6,28,10,8,8,10,12,14,14].map(w=>({wch:w}));
-
-  // Header style for ws2
-  for(let C=0;C<=partHeader.length-1;C++){
-    const ref = XLSX.utils.encode_cell({r:0,c:C});
-    if(ws2[ref]) ws2[ref].s={fill:{patternType:"solid",fgColor:{rgb:"6C5CE7"}},font:{bold:true,color:{rgb:"FFFFFF"},sz:10}};
-  }
-  // Gold for rank 1, Silver for rank 2, Bronze for rank 3
-  const medalColors = ["FFF9C4","F5F5F5","FFE0B2"];
-  for(let i=0;i<Math.min(3,ranked.length);i++){
-    for(let C=0;C<=partHeader.length-1;C++){
-      const ref=XLSX.utils.encode_cell({r:i+1,c:C});
-      if(ws2[ref]) ws2[ref].s={fill:{patternType:"solid",fgColor:{rgb:medalColors[i]}},font:{bold:true,sz:10}};
-    }
-  }
-
-  XLSX.utils.book_append_sheet(wb, ws2, "Participant Data");
-
-  // ── Write & Download ──────────────────────────────────────────────────────
+  const bom  = "\uFEFF";
+  const blob = new Blob([bom+combined], {type:"text/csv;charset=utf-8;"});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
   const date = new Date().toISOString().slice(0,10);
-  XLSX.writeFile(wb, `BrainWar_Results_${date}.xlsx`);
+  a.href=url; a.download=`BrainWar_Results_${date}.csv`; a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── SCREEN ROTATION ───────────────────────────────────────────────────────────
