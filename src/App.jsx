@@ -598,6 +598,7 @@ function Shell({children}){
     <>
       <style>{css}</style>
       <MuteBtn/>
+      <InstallPrompt/>
       <div style={{
         minHeight:"100vh",
         background:"linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)",
@@ -643,6 +644,57 @@ function Btn({children,onClick,color="#6C5CE7",style,disabled}){
       touchAction:"manipulation",
       ...style,
     }}>{children}</button>
+  );
+}
+
+// ── PWA INSTALL PROMPT ────────────────────────────────────────────────────────
+function InstallPrompt(){
+  const [prompt, setPrompt] = useState(null);
+  const [show, setShow]     = useState(false);
+
+  useEffect(()=>{
+    const handler = e => { e.preventDefault(); setPrompt(e); setShow(true); };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  },[]);
+
+  if(!show || !prompt) return null;
+
+  return(
+    <div style={{
+      position:"fixed",bottom:20,left:16,right:16,zIndex:9999,
+      background:"linear-gradient(135deg,#1D1A3D,#0f3460)",
+      border:"1px solid rgba(108,92,231,.5)",
+      borderRadius:18,padding:"16px 18px",
+      display:"flex",alignItems:"center",gap:14,
+      boxShadow:"0 8px 32px rgba(0,0,0,.5)",
+      animation:"fadeSlideUp .4s ease",
+    }}>
+      <div style={{fontSize:36,flexShrink:0}}>⚔️</div>
+      <div style={{flex:1}}>
+        <p style={{margin:0,fontWeight:800,fontSize:15,color:"#fff"}}>Install BrainWar</p>
+        <p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,.5)"}}>
+          Add to home screen for app experience
+        </p>
+      </div>
+      <div style={{display:"flex",gap:8,flexShrink:0}}>
+        <button onClick={()=>setShow(false)} style={{
+          background:"rgba(255,255,255,.1)",border:"none",
+          borderRadius:10,padding:"8px 12px",color:"rgba(255,255,255,.6)",
+          fontSize:13,cursor:"pointer",fontWeight:600,
+        }}>Later</button>
+        <button onClick={async()=>{
+          if(prompt){
+            prompt.prompt();
+            const r = await prompt.userChoice;
+            if(r.outcome==="accepted") setShow(false);
+          }
+        }} style={{
+          background:"#e63946",border:"none",borderRadius:10,
+          padding:"8px 14px",color:"#fff",fontSize:13,cursor:"pointer",fontWeight:800,
+        }}>Install 📲</button>
+      </div>
+    </div>
   );
 }
 
@@ -990,18 +1042,11 @@ function HostActive({game,onReveal}){
   const answersForQ=(game.answers||{})[game.currentIndex]||{};
   const answered=Object.keys(answersForQ).length;
   const revealedRef=useRef(false);
-  const[showBuzzer,setShowBuzzer]=useState(true);
   const doReveal=()=>{if(!revealedRef.current){revealedRef.current=true;onReveal();}};
   if(!q)return null;
 
   return(
     <div>
-      {showBuzzer&&(
-        <CountdownOverlay
-          label={game.currentIndex===0?"Quiz is Starting!":"Next Question"}
-          onDone={()=>{setShowBuzzer(false);playGameMusic();}}
-        />
-      )}
 
       {/* TOP BAR */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
@@ -1443,7 +1488,6 @@ function PlayerLive({playerId,game,onAnswer}){
   const[selectedAnswer,setSelectedAnswer]=useState(null);
   const[showFloat,setShowFloat]=useState(false);
   const[earnedPts,setEarnedPts]=useState(0);
-  const[showBuzzer,setShowBuzzer]=useState(false);
   const[timerExpired,setTimerExpired]=useState(false);
   const prevIdxRef=useRef(-1);
   const prevScoreRef=useRef(0);
@@ -1451,7 +1495,6 @@ function PlayerLive({playerId,game,onAnswer}){
   useEffect(()=>{
     if(game.status==="active"&&idx!==prevIdxRef.current){
       prevIdxRef.current=idx;
-      setShowBuzzer(true);
       setSelectedAnswer(null);
       setTimerExpired(false);
     }
@@ -1512,12 +1555,6 @@ function PlayerLive({playerId,game,onAnswer}){
 
     return(
       <div style={{animation:"fadeSlideDown .4s ease both"}}>
-        {showBuzzer&&(
-          <CountdownOverlay
-            label={idx===0?"Quiz is Starting!":"Next Question"}
-            onDone={()=>setShowBuzzer(false)}
-          />
-        )}
 
         {/* TOP */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
@@ -1673,11 +1710,12 @@ export default function App(){
 
   const handleStart  =()=>{
     playSound("start");
+    playGameMusic();
     if(!shownRotateRef.current){ shownRotateRef.current=true; setShowRotate(true); setTimeout(()=>setShowRotate(false),8000); }
     refresh(g=>({...g,status:"active",currentIndex:0,questionStartedAt:Date.now()}));
   };
   const handleReveal =()=>{stopBgMusic();refresh(g=>({...g,status:"reveal"}));};
-  const handleNext   =()=>{stopBgMusic();refresh(g=>({...g,status:"active",currentIndex:g.currentIndex+1,questionStartedAt:Date.now()}));};
+  const handleNext   =()=>{stopBgMusic();playGameMusic();refresh(g=>({...g,status:"active",currentIndex:g.currentIndex+1,questionStartedAt:Date.now()}));};
   const handleEnd    =()=>{stopBgMusic();setTimeout(()=>playSound("victory"),200);refresh(g=>({...g,status:"ended"}));};
   const handleAnswer =(choice)=>{
     if(choice>=0)playSound("tick");
